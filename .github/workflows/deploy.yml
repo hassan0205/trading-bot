@@ -14,7 +14,8 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Docker Login
-      run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+      run: |
+        echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
     - name: Build Image
       run: docker build -t h4ssan022557/trading-bot:latest ./app
@@ -22,12 +23,24 @@ jobs:
     - name: Push Image
       run: docker push h4ssan022557/trading-bot:latest
 
-    - name: Deploy to EC2
+    - name: Deploy to K3s (EC2)
       uses: appleboy/ssh-action@v0.1.6
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          cd ~/deploy
-          ./deploy.sh
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+          # Pull latest image
+          docker pull h4ssan022557/trading-bot:latest
+
+          # Apply Kubernetes manifests
+          kubectl apply -f ~/k8s/deployment.yaml
+          kubectl apply -f ~/k8s/service.yaml
+
+          # Restart deployment to use new image
+          kubectl rollout restart deployment trading-bot
+
+          # Wait for rollout to complete
+          kubectl rollout status deployment trading-bot
